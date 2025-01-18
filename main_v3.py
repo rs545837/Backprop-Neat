@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad, jit, lax
+from utils import *
 
 import numpy as np
 import json
@@ -169,9 +170,6 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
                 edgecolor='none')
     plt.close()
 
-def softmax(x):
-    e_x = np.exp((x - np.max(x)) / temperature)
-    return e_x / e_x.sum()
 
 class Gene:
     def __init__(self, in_node, out_node, enable, innov_num, activation=0):
