@@ -1,5 +1,5 @@
 # Backprop-Neat
 
 ```
-pip install matplotlib jax 
+pip install -r requirements.txt
 ```
