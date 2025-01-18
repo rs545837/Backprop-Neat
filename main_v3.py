@@ -1,8 +1,6 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad, jit, lax
-from utils import *
-from problems import *
 
 import numpy as np
 import json
@@ -16,6 +14,8 @@ import shutil
 
 import networkx as nx
 import matplotlib.pyplot as plt
+
+from utils import *
 
 with open('configBP.json', 'r') as file:
     config = json.load(file)
@@ -62,13 +62,13 @@ def identity(x):
 
 fun_enum = [identity, jnp.absolute, jnp.square, jnp.sin, jnp_relu, neat_act]
 
+
 def getActivations(genelist):
     activation_list = np.zeros(MAX_NODE_CT, dtype=int)
     for gene in genelist:
         if gene.enable:
             activation_list[gene.out_node] = gene.activation
     return activation_list
-
 
 def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
     global MAX_NODE_CT, num_in, num_out
@@ -172,6 +172,21 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
     plt.close()
 
 
+
+def topoSort(graph):
+    arr = []
+    theset = set()
+    def DFS(n):
+        if n not in theset:
+            theset.add(n)
+            for i, x in enumerate(graph[n]):
+                if x != 0:
+                    DFS(i)
+            arr.append(n)
+    for i in range(num_in):
+        DFS(i)
+    return np.array(arr)[::-1]
+
 class Gene:
     def __init__(self, in_node, out_node, enable, innov_num, activation=0):
         self.in_node = in_node
@@ -179,6 +194,7 @@ class Gene:
         self.enable = enable
         self.innov_num = innov_num
         self.activation = activation
+
 
 
 def geneGraph(genelist):
