@@ -71,37 +71,93 @@ def getActivations(genelist):
             activation_list[gene.out_node] = gene.activation
     return activation_list
 
+def save_digraph(adj_mat, activations, gen_num, fitness, output_dir, is_best=False):
+    """
+    Save network information in digraph.txt format
+    """
+    # Create the output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Determine filename
+    prefix = "best_" if is_best else ""
+    filename = os.path.join(output_dir, f"{prefix}digraph_{gen_num}.txt")
+    
+    # Write network information
+    with open(filename, 'w') as f:
+        f.write(f"Generation: {gen_num}\n")
+        f.write(f"Fitness: {fitness:.6f}\n\n")
+        f.write("Network Structure:\n")
+        f.write("-----------------\n")
+        
+        # Define activation function labels
+        activation_labels = {0: 'identity', 1: 'abs', 2: 'square', 3: 'sin', 4: 'relu', 5: 'sigmoid'}
+        
+        # Write node information
+        f.write("\nNodes:\n")
+        for i in range(len(adj_mat)):
+            # Only include nodes that are actually used in the network
+            if np.any(adj_mat[i] != 0) or np.any(adj_mat[:, i] != 0):
+                # Force output nodes to have identity activation
+                if num_in <= i < num_in + num_out:
+                    act_label = 'identity'
+                else:
+                    act_label = activation_labels.get(activations[i], 'unknown')
+                f.write(f"Node {i}: {act_label}\n")
+        
+        # Write edge information
+        f.write("\nConnections:\n")
+        for i in range(len(adj_mat)):
+            for j in range(len(adj_mat)):
+                if adj_mat[i][j] != 0:
+                    f.write(f"Node {i} -> Node {j} (weight: {adj_mat[i][j]:.4f})\n")
+
 def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
     global MAX_NODE_CT, num_in, num_out
-
-    # Create a directed graph
     G = nx.DiGraph()
-
-    # Add edges to the graph
+    
+    # First collect all edges while preventing output nodes from having outgoing edges
+    edges = []
     for i in range(MAX_NODE_CT):
+        # Skip if i is an output node (should not have outgoing edges)
+        if num_in <= i < num_in + num_out:
+            continue
+            
         for j in range(MAX_NODE_CT):
             if adj_mat[i][j] != 0:
-                G.add_edge(i, j, weight=adj_mat[i][j])
+                edges.append((i, j, {'weight': adj_mat[i][j]}))
+                print(f"Adding edge {i}->{j} with weight {adj_mat[i][j]}")
 
-    # Custom positions for the nodes
+    # Add all edges to graph
+    G.add_edges_from(edges)
+
+    # Custom positions for the nodes - modified for better layout
     pos = {}
-    # Place nodes 0-11 at the bottom in a row
+    # Input nodes at bottom
     for i in range(num_in):
-        pos[i] = (i, 0)
-    # Place nodes 12-14 in a row at the top
+        pos[i] = (i * 2, 0)  # Spread out input nodes more
+        
+    # Output nodes at top
     for i in range(num_in, num_in + num_out):
-        pos[i] = (i - 6, 2)
-    # Place any additional nodes in the middle
-    middle_nodes = [n for n in G.nodes() if n not in pos]
-    middle_x = 6  # Starting x position for middle nodes
+        pos[i] = ((i - num_in) * 2, 3)  # Increased vertical spacing
+        
+    # Hidden nodes in middle, spread out horizontally
+    middle_nodes = sorted([n for n in G.nodes() if n not in pos])
+    if middle_nodes:
+        middle_x = num_in  # Center point
+        for i, node in enumerate(middle_nodes):
+            pos[node] = (middle_x + (i - len(middle_nodes)/2) * 2, 1.5)
+    middle_x = num_in / 2  # Center middle nodes
     for i, node in enumerate(middle_nodes):
-        pos[node] = (middle_x + i, 1)
+        pos[node] = (middle_x + i - len(middle_nodes)/2, 1)
 
     # Edge weights
     weights = [G[u][v]['weight'] for u, v in G.edges()]
     
     # Normalize weights for color mapping
-    weights_normalized = (weights - np.min(weights)) / (np.max(weights) - np.min(weights))
+    if weights:  # Check if there are any weights
+        weights_normalized = (weights - np.min(weights)) / (np.max(weights) - np.min(weights) + 1e-10)
+    else:
+        weights_normalized = []
 
     # Create a figure and axes with white background
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -113,9 +169,15 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
 
     # Create a color map for activations
     activation_colors = plt.colormaps['Set1']
-    node_colors = [activation_colors(activations[i]) for i in G.nodes()]
+    node_colors = []
+    for i in G.nodes():
+        # Force output nodes to have identity activation for coloring
+        if num_in <= i < num_in + num_out:
+            node_colors.append(activation_colors(0))  # Use identity color for output nodes
+        else:
+            node_colors.append(activation_colors(activations[i]))
 
-    # Draw the graph with original sizes
+    # Draw the graph
     nx.draw(G, pos, ax=ax, 
             edge_color=weights_normalized,
             edge_cmap=plt.cm.viridis,
@@ -126,26 +188,31 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
             font_color='black',
             width=1.0)
 
-    # Add activation function labels with original size
+    # Add activation function labels
     for node in G.nodes():
         x, y = pos[node]
-        label = activation_labels.get(activations[node], '')
+        # Force output nodes to show 'eye' as activation
+        if num_in <= node < num_in + num_out:
+            label = 'eye'
+        else:
+            label = activation_labels.get(activations[node], '')
         ax.text(x, y + 0.1, label, 
                 fontsize=8,
                 ha='center',
                 color='black',
                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
 
-    # Create a color bar with original size
-    sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, 
-                              norm=plt.Normalize(vmin=min(weights), vmax=max(weights)))
-    sm.set_array([])
-    cbar = plt.colorbar(sm, ax=ax)
-    cbar.set_label('Edge Weights', color='black', fontsize=10)
-    cbar.ax.yaxis.set_tick_params(color='black')
-    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='black')
+    # Create a color bar if there are edges
+    if weights:
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, 
+                                  norm=plt.Normalize(vmin=min(weights), vmax=max(weights)))
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax)
+        cbar.set_label('Edge Weights', color='black', fontsize=10)
+        cbar.ax.yaxis.set_tick_params(color='black')
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='black')
 
-    # Add annotations with original size and positioning
+    # Add title
     title_text = f"Generation: {gen_num}\nFitness: {fitness:.6f}"
     if is_best:
         title_text = "BEST NETWORK\n" + title_text
@@ -163,7 +230,7 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    # Save the plot with appropriate filename
+    # Save the plot
     filename = f"best_{gen_num}.png" if is_best else f"{gen_num}.png"
     plt.savefig(os.path.join(output_folder, filename),
                 dpi=300,
@@ -171,6 +238,9 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
                 facecolor='white',
                 edgecolor='none')
     plt.close()
+    
+    # Save digraph information
+    save_digraph(adj_mat, activations, gen_num, fitness, output_folder, is_best)
 
 
 
