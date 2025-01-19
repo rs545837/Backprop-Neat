@@ -1,5 +1,10 @@
 import numpy as np
 import jax.numpy as jnp
+import json
+
+with open('configBP.json', 'r') as file:
+    config = json.load(file)
+temperature = config["temperature"]
 
 def jaccard_sim(list1, list2):
     set1, set2 = set(list1), set(list2)
