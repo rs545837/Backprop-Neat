@@ -16,6 +16,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 from utils import *
+from problems import *
 
 with open('configBP.json', 'r') as file:
     config = json.load(file)
