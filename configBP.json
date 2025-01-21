@@ -17,15 +17,15 @@
     "wt_mutation": 0.8,
     "single_wt": 0.9,
     "nudge_range": 0.6,
-    "new_link_chance": 0.14,
-    "new_node_chance": 0.1,
+    "new_link_chance": 0.7,
+    "new_node_chance": 0.7,
     "stagnation_cutoff": 15,
     "temperature": 1,
     "num_elites": 1,
     "clamp": 2,
 
-    "num_backprop_steps": 300,
-    "learning_rate": 0.005,
+    "num_backprop_steps": 600,
+    "learning_rate": 0.01,
     "connection_penalty": 0.03,
     "max_node_count": 20
 
