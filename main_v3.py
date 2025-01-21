@@ -146,9 +146,6 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
         middle_x = num_in  # Center point
         for i, node in enumerate(middle_nodes):
             pos[node] = (middle_x + (i - len(middle_nodes)/2) * 2, 1.5)
-    middle_x = num_in / 2  # Center middle nodes
-    for i, node in enumerate(middle_nodes):
-        pos[node] = (middle_x + i - len(middle_nodes)/2, 1)
 
     # Edge weights
     weights = [G[u][v]['weight'] for u, v in G.edges()]
@@ -177,16 +174,22 @@ def visualize_graph(adj_mat, gen_num, fitness, activations, is_best=False):
         else:
             node_colors.append(activation_colors(activations[i]))
 
-    # Draw the graph
-    nx.draw(G, pos, ax=ax, 
-            edge_color=weights_normalized,
-            edge_cmap=plt.cm.viridis,
-            node_color=node_colors,
-            with_labels=True,
-            node_size=500,
-            font_size=10,
-            font_color='black',
-            width=1.0)
+    # Draw the graph with arrows
+    nx.draw_networkx_nodes(G, pos, ax=ax,
+                          node_color=node_colors,
+                          node_size=500)
+    
+    nx.draw_networkx_labels(G, pos,
+                           font_size=10,
+                           font_color='black')
+    
+    # Draw edges with arrows
+    nx.draw_networkx_edges(G, pos, ax=ax,
+                          edge_color=weights_normalized,
+                          edge_cmap=plt.cm.viridis,
+                          width=1.0,
+                          arrowsize=20,
+                          arrowstyle='->')  
 
     # Add activation function labels
     for node in G.nodes():
@@ -431,7 +434,7 @@ class Species:
 
     def new_gen_spec(self, num_members):
         self.members = sorted(self.members, key=lambda x: x.fitness, reverse=True)
-
+    
         if len(self.members) > 2:
             num_to_keep = int(len(self.members) * keep_percent)
             self.members = self.members[:num_to_keep]
@@ -439,31 +442,45 @@ class Species:
         if len(self.members) < num_members:
             if len(self.members) == 1:
                 self.members.append(copy.deepcopy(self.members[0]))
-
+    
             probs = softmax(np.array([x.fitness for x in self.members]))
             num_crosses = num_members - len(self.members)
-
+    
             for i in range(num_crosses):
                 org1, org2 = np.random.choice(self.members[:len(probs)], 2, p=probs, replace=True)
                 self.members.append(crossover(org1, org2))
-
+    
             for org in self.members:
                 org.graph, org.bools = geneGraph(org.genelist)
                 org.toposort = topoSort(org.graph)
                 org.activations = getActivations(org.genelist)
-
+    
             for i in range(num_elites, len(self.members)):
                 org = self.members[i]
-
+                
+                # Force at least one structural change per organism
+                change_made = False
+                
+                # Try adding a node first
+                if not change_made and org.node_ct < MAX_NODE_CT:
+                    org.mutate_new_node()
+                    org.toposort = topoSort(org.graph)
+                    change_made = True
+                
+                # If node addition fails, try adding an edge
+                if not change_made:
+                    org.mutate_new_edge()
+                
+                # Additional random mutations can still occur
                 prob = np.random.uniform()
                 if prob < new_node_chance:
                     org.mutate_new_node()
                     org.toposort = topoSort(org.graph)
-
+    
                 prob = np.random.uniform()
                 if prob < new_link_chance:
                     org.mutate_new_edge()
-
+    
                 org.activations = getActivations(org.genelist)
 
     def update_fitness(self):
@@ -695,14 +712,12 @@ class GenePool:
 
     # Modify the GenePool class new_gen method to force growth
     def new_gen(self):
-        # Existing initialization code remains the same
         Genome.mutation = dict()
         for s in self.species:
             s.members = []
     
         self.organisms = [org for org in self.organisms if not math.isnan(org.fitness)]
     
-        # Assign organisms to species
         for org in self.organisms:
             org.toposort = topoSort(org.graph)
             for s in self.species:
@@ -711,17 +726,15 @@ class GenePool:
             else:
                 self.species.append(Species(org))
     
-        # Remove empty or stagnant species
         self.species = [s for s in self.species if len(s.members) > 0 and s.stagnation_num < stagnation_cutoff and not math.isnan(s.fitness)]
     
         print("num species: ", len(self.species))
     
-        # Calculate member counts
         summed_fitness = sum(s.fitness for s in self.species)
         ct = 0
     
         if summed_fitness <= 0:
-            # If all fitnesses are zero/negative, distribute population equally
+            # If total fitness is zero or negative, distribute population equally
             base_members = init_pop // len(self.species)
             remainder = init_pop % len(self.species)
             
@@ -743,33 +756,11 @@ class GenePool:
     
         for s in self.species:
             self.organisms += s.members
-    
-        # Force growth on a portion of the population
-        for org in self.organisms:
-            # Always try to add new nodes (80% chance per organism)
-            if random.random() < 0.8:
-                num_new_nodes = random.randint(1, 3)  # Add 1-3 nodes
-                for _ in range(num_new_nodes):
-                    org.mutate_new_node()
-                    org.toposort = topoSort(org.graph)
-    
-            # Always try to add new connections (90% chance per organism)
-            if random.random() < 0.9:
-                num_new_edges = random.randint(2, 5)  # Add 2-5 edges
-                for _ in range(num_new_edges):
-                    org.mutate_new_edge()
-    
-            # Randomize some activation functions (30% chance per organism)
-            if random.random() < 0.3:
-                for gene in org.genelist:
-                    if gene.enable and random.random() < 0.2:
-                        gene.activation = random.randint(1, len(fun_enum) - 1)
-    
         print("population: ", len(self.organisms))
 
     def new_gen_spec(self, num_members):
         self.members = sorted(self.members, key=lambda x: x.fitness, reverse=True)
-        
+    
         if len(self.members) > 2:
             num_to_keep = int(len(self.members) * keep_percent)
             self.members = self.members[:num_to_keep]
@@ -777,31 +768,31 @@ class GenePool:
         if len(self.members) < num_members:
             if len(self.members) == 1:
                 self.members.append(copy.deepcopy(self.members[0]))
-        
+    
             probs = softmax(np.array([x.fitness for x in self.members]))
             num_crosses = num_members - len(self.members)
-        
-            # Create new members through crossover
+    
             for i in range(num_crosses):
                 org1, org2 = np.random.choice(self.members[:len(probs)], 2, p=probs, replace=True)
-                new_org = crossover(org1, org2)
-                
-                # Force immediate growth on new organisms
-                if random.random() < 0.9:  # 90% chance of growth
-                    num_new_nodes = random.randint(1, 2)
-                    for _ in range(num_new_nodes):
-                        new_org.mutate_new_node()
-                        new_org.toposort = topoSort(new_org.graph)
-                    
-                    num_new_edges = random.randint(2, 4)
-                    for _ in range(num_new_edges):
-                        new_org.mutate_new_edge()
-                
-                self.members.append(new_org)
-        
+                self.members.append(crossover(org1, org2))
+    
             for org in self.members:
                 org.graph, org.bools = geneGraph(org.genelist)
                 org.toposort = topoSort(org.graph)
+                org.activations = getActivations(org.genelist)
+    
+            for i in range(num_elites, len(self.members)):
+                org = self.members[i]
+    
+                prob = np.random.uniform()
+                if prob < new_node_chance:
+                    org.mutate_new_node()
+                    org.toposort = topoSort(org.graph)
+    
+                prob = np.random.uniform()
+                if prob < new_link_chance:
+                    org.mutate_new_edge()
+    
                 org.activations = getActivations(org.genelist)
 
     def calculate_complexity_penalty(self, org, base_nodes=None):
@@ -841,6 +832,19 @@ class GenePool:
         x, y = jnp.array(x[:len(x)//2]), jnp.array(y[:len(y)//2])
         the_graphs, the_bools, the_activations = population_stack(self.organisms)
         fitnesses, the_graphs = eval_orgs(the_graphs, the_bools, the_activations, x, y)
+
+        # Print raw loss values before applying complexity penalty
+        print("\nRaw loss values for top 5 organisms:")
+        sorted_losses = sorted(enumerate(fitnesses), key=lambda x: x[1])[:5]
+        for idx, loss_val in sorted_losses:
+            connection_ct = self.organisms[idx].connection_ct
+            penalty = math.sqrt(1 + (connection_penalty * connection_ct))
+            final_fitness = -loss_val * penalty
+            print(f"Organism {idx}:")
+            print(f"  Raw loss: {loss_val}")
+            print(f"  Connection count: {connection_ct}")
+            print(f"  Complexity penalty: {penalty}")
+            print(f"  Final fitness: {final_fitness}\n")
         
     #    for idx, org in enumerate(self.organisms):
     #        # Apply the enhanced complexity penalty
